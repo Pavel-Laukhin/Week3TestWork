@@ -27,7 +27,7 @@ class ViewController: UIViewController {
         disableStartButton()
         
         //Hide keyboard on screen tap
-        let tap = UITapGestureRecognizer(target: self, action: #selector(ViewController.handleTap))
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
         view.addGestureRecognizer(tap)
         inputTextField.delegate = self
     }
@@ -54,10 +54,12 @@ class ViewController: UIViewController {
         indicator.startAnimating()
         generatePasswordButton.isEnabled = false
         generatePasswordButton.alpha = 0.5
-        start()
+        //        startViaGCD()
+        startViaOperation()
     }
     
-    private func start() {
+    /// Поиск пароля с использованием Grand Central Dispatch
+    private func startViaGCD() {
         let startTime = Date()
         let queue = DispatchQueue.global()
         
@@ -66,6 +68,44 @@ class ViewController: UIViewController {
             DispatchQueue.main.async {
                 self.stop(password: result ?? "Error", startTime: startTime)
             }
+        }
+    }
+    
+    /// Поиск пароля с использованием Operation
+    private func startViaOperation() {
+        let startTime = Date()
+        let queue = OperationQueue()
+        
+        /// Флажок, который становится true в случае, если результат найден.
+        var isResult = false
+        
+        // Количество создаваемых операций (количество желаемых потоков):
+        let threadsCount = 35
+        
+        // Разбиваем поиск на количество потоков. В каждом из них запускаем операцию.
+        for thread in 0..<threadsCount {
+            let operation = BruteForceOperation(thread: thread, threadsCount: threadsCount, availableCharacters: Consts.joinedString, inputPassword: password, queue: queue)
+            operation.completionBlock = {
+                
+                // для дебаггинга
+                print("competionBlock of thread \(thread + 1)")
+                
+                if let result = operation.result {
+                    isResult = true
+                    
+                    // для дебаггинга
+                    print("Result is \(result) of thread \(thread + 1)")
+                    
+                    DispatchQueue.main.async {
+                        self.stop(password: result, startTime: startTime)
+                    }
+                } else if queue.operationCount == 0 && isResult == false {
+                    DispatchQueue.main.async {
+                        self.stop(password: "Error", startTime: startTime)
+                    }
+                }
+            }
+            queue.addOperation(operation)
         }
     }
     
